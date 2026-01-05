@@ -21,8 +21,21 @@ namespace Infrastructure.Persistence.Configurations
                 .HasMaxLength(100);
 
             builder.Property(u => u.PasswordHash)
-                .IsRequired()
+                .IsRequired(false)
                 .HasMaxLength(255);
+
+            builder.Property(u => u.GoogleId)
+                .IsRequired(false)
+                .HasMaxLength(100);
+
+            builder.HasIndex(u => u.GoogleId)
+                .IsUnique()
+                .HasFilter("[GoogleId] IS NOT NULL");
+
+            builder.Property(u => u.Role)
+                .IsRequired()
+                .HasConversion<int>()
+                .HasDefaultValue(Domain.Enums.UserRole.User);
 
             builder.Property(u => u.CreatedAt)
                 .IsRequired()

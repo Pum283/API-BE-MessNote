@@ -30,6 +30,16 @@ namespace API.Middlewares
 
         private static Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
+            // Check if this is a Google OAuth endpoint
+            var path = context.Request.Path.Value?.ToLower() ?? "";
+            if (path.Contains("/auth/google"))
+            {
+                // For OAuth endpoints, redirect to login with error instead of returning JSON
+                var errorMessage = Uri.EscapeDataString($"Google login failed: {exception.Message}");
+                context.Response.Redirect($"http://localhost:5000/login?error={errorMessage}");
+                return Task.CompletedTask;
+            }
+
             var code = HttpStatusCode.InternalServerError;
             var result = string.Empty;
 

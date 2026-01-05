@@ -3,13 +3,16 @@ using API.Responses;
 using Domain.Entity;
 using Domain.Enums;
 using Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "Authenticated")]
     public class MessageTemplatesController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -22,10 +25,36 @@ namespace API.Controllers
         [HttpGet]
         public async Task<ActionResult<List<MessageTemplateResponse>>> GetAll([FromQuery] Guid? campaignId = null)
         {
-            var query = _context.MessageTemplates.AsQueryable();
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            var query = _context.MessageTemplates
+                .Include(m => m.Campaign)
+                .AsQueryable();
 
             if (campaignId.HasValue)
+            {
+                var campaign = await _context.Campaigns.FindAsync(campaignId.Value);
+                if (campaign == null)
+                    return NotFound();
+
+                if (currentUserRole != "Admin" && campaign.UserId != currentUserId)
+                    return Forbid();
+
                 query = query.Where(m => m.CampaignId == campaignId.Value);
+            }
+            else
+            {
+                // If no campaignId, filter by user's campaigns (unless Admin)
+                if (currentUserRole != "Admin")
+                {
+                    var userCampaignIds = await _context.Campaigns
+                        .Where(c => c.UserId == currentUserId)
+                        .Select(c => c.Id)
+                        .ToListAsync();
+                    query = query.Where(m => userCampaignIds.Contains(m.CampaignId));
+                }
+            }
 
             var templates = await query
                 .OrderBy(m => m.SequenceOrder)
@@ -66,16 +95,55 @@ namespace API.Controllers
         [HttpPost]
         public async Task<ActionResult<MessageTemplateResponse>> Create([FromBody] CreateMessageTemplateRequest request)
         {
-            // Verify campaign exists
-            if (!await _context.Campaigns.AnyAsync(c => c.Id == request.CampaignId))
-                return BadRequest("Campaign not found");
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            // Verify campaign exists and user has permission
+            var campaign = await _context.Campaigns
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.Id == request.CampaignId);
+            
+            if (campaign == null)
+                return BadRequest(new { error = "CAMPAIGN_NOT_FOUND", message = "Campaign not found" });
+
+            if (currentUserRole != "Admin" && campaign.UserId != currentUserId)
+                return Forbid();
+
+            // Check template limits for User role
+            if (campaign.User.Role == UserRole.User)
+            {
+                var userTemplatesCount = await _context.MessageTemplates
+                    .Include(m => m.Campaign)
+                    .CountAsync(m => m.Campaign.UserId == campaign.UserId);
+
+                if (userTemplatesCount >= 10)
+                {
+                    return BadRequest(new
+                    {
+                        error = "LIMIT_EXCEEDED",
+                        message = "Bạn đã đạt giới hạn 10 template. Vui lòng xóa một template để tạo mới.",
+                        details = new { limit = 10, current = userTemplatesCount }
+                    });
+                }
+
+                // Check sequence level limit (max 2 for User)
+                if (request.SequenceOrder > 2)
+                {
+                    return BadRequest(new
+                    {
+                        error = "SEQUENCE_LIMIT_EXCEEDED",
+                        message = "Gói của bạn chỉ cho phép tối đa 2 tin nhắn trong chuỗi khẩn cấp.",
+                        details = new { maxSequence = 2, requested = request.SequenceOrder }
+                    });
+                }
+            }
 
             var template = new MessageTemplate
             {
                 CampaignId = request.CampaignId,
                 Content = request.Content,
                 Channel = (MessageChannel)request.Channel,
-                SequenceOrder = request.SequenceOrder,
+                SequenceOrder = request.SequenceOrder, // Default value 1 is set in CreateMessageTemplateRequest
                 Placeholders = request.Placeholders
             };
 
@@ -97,9 +165,31 @@ namespace API.Controllers
         [HttpPut("{id}")]
         public async Task<ActionResult<MessageTemplateResponse>> Update(Guid id, [FromBody] UpdateMessageTemplateRequest request)
         {
-            var template = await _context.MessageTemplates.FindAsync(id);
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            var template = await _context.MessageTemplates
+                .Include(m => m.Campaign)
+                .ThenInclude(c => c.User)
+                .FirstOrDefaultAsync(m => m.Id == id);
+            
             if (template == null)
                 return NotFound();
+
+            // Verify campaign ownership
+            if (currentUserRole != "Admin" && template.Campaign.UserId != currentUserId)
+                return Forbid();
+
+            // Check sequence level limit for User role
+            if (template.Campaign.User.Role == UserRole.User && request.SequenceOrder.HasValue && request.SequenceOrder.Value > 2)
+            {
+                return BadRequest(new
+                {
+                    error = "SEQUENCE_LIMIT_EXCEEDED",
+                    message = "Gói của bạn chỉ cho phép tối đa 2 tin nhắn trong chuỗi khẩn cấp.",
+                    details = new { maxSequence = 2, requested = request.SequenceOrder.Value }
+                });
+            }
 
             if (request.Content != null)
                 template.Content = request.Content;
@@ -130,9 +220,19 @@ namespace API.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            var template = await _context.MessageTemplates.FindAsync(id);
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            var template = await _context.MessageTemplates
+                .Include(m => m.Campaign)
+                .FirstOrDefaultAsync(m => m.Id == id);
+            
             if (template == null)
                 return NotFound();
+
+            // Verify campaign ownership
+            if (currentUserRole != "Admin" && template.Campaign.UserId != currentUserId)
+                return Forbid();
 
             _context.MessageTemplates.Remove(template);
             await _context.SaveChangesAsync();
