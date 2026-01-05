@@ -1,16 +1,19 @@
 using API.Contracts.Users;
 using API.Responses;
 using Domain.Entity;
+using Domain.Enums;
 using Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text;
+using BCrypt.Net;
+using System.Security.Claims;
 
 namespace API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "Authenticated")]
     public class UsersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -20,7 +23,11 @@ namespace API.Controllers
             _context = context;
         }
 
+        /// <summary>
+        /// Lấy danh sách tất cả người dùng (chỉ Admin)
+        /// </summary>
         [HttpGet]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<List<UserResponse>>> GetAll()
         {
             var users = await _context.Users
@@ -29,6 +36,7 @@ namespace API.Controllers
                     Id = u.Id,
                     Username = u.Username,
                     Email = u.Email,
+                    Role = u.Role,
                     IsActive = u.IsActive,
                     CreatedAt = u.CreatedAt,
                     UpdatedAt = u.UpdatedAt
@@ -38,9 +46,21 @@ namespace API.Controllers
             return Ok(users);
         }
 
+        /// <summary>
+        /// Lấy thông tin người dùng theo ID (Admin có thể xem tất cả, User chỉ xem được chính mình)
+        /// </summary>
         [HttpGet("{id}")]
         public async Task<ActionResult<UserResponse>> GetById(Guid id)
         {
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            // User chỉ có thể xem thông tin của chính mình, Admin có thể xem tất cả
+            if (currentUserRole != "Admin" && currentUserId != id)
+            {
+                return Forbid();
+            }
+
             var user = await _context.Users.FindAsync(id);
             if (user == null)
                 return NotFound();
@@ -50,13 +70,18 @@ namespace API.Controllers
                 Id = user.Id,
                 Username = user.Username,
                 Email = user.Email,
+                Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt
             });
         }
 
+        /// <summary>
+        /// Tạo người dùng mới (chỉ Admin)
+        /// </summary>
         [HttpPost]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<ActionResult<UserResponse>> Create([FromBody] CreateUserRequest request)
         {
             // Check if username or email already exists
@@ -66,11 +91,15 @@ namespace API.Controllers
             if (await _context.Users.AnyAsync(u => u.Email == request.Email))
                 return BadRequest("Email already exists");
 
+            // Chỉ Admin mới có thể tạo User với role khác User
+            var role = request.Role ?? UserRole.User;
+
             var user = new User
             {
                 Username = request.Username,
                 Email = request.Email,
-                PasswordHash = HashPassword(request.Password),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                Role = role,
                 IsActive = true
             };
 
@@ -82,18 +111,37 @@ namespace API.Controllers
                 Id = user.Id,
                 Username = user.Username,
                 Email = user.Email,
+                Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt
             });
         }
 
+        /// <summary>
+        /// Cập nhật thông tin người dùng (Admin có thể cập nhật tất cả, User chỉ cập nhật được chính mình nhưng không đổi role)
+        /// </summary>
         [HttpPut("{id}")]
         public async Task<ActionResult<UserResponse>> Update(Guid id, [FromBody] UpdateUserRequest request)
         {
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
             var user = await _context.Users.FindAsync(id);
             if (user == null)
                 return NotFound();
+
+            // User chỉ có thể cập nhật thông tin của chính mình, Admin có thể cập nhật tất cả
+            if (currentUserRole != "Admin" && currentUserId != id)
+            {
+                return Forbid();
+            }
+
+            // Chỉ Admin mới có thể thay đổi Role
+            if (request.Role.HasValue && currentUserRole != "Admin")
+            {
+                return Forbid("Chỉ Admin mới có thể thay đổi vai trò người dùng");
+            }
 
             if (!string.IsNullOrEmpty(request.Username) && request.Username != user.Username)
             {
@@ -110,10 +158,20 @@ namespace API.Controllers
             }
 
             if (!string.IsNullOrEmpty(request.Password))
-                user.PasswordHash = HashPassword(request.Password);
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
+            if (request.Role.HasValue)
+                user.Role = request.Role.Value;
 
             if (request.IsActive.HasValue)
+            {
+                // Chỉ Admin mới có thể thay đổi trạng thái IsActive
+                if (currentUserRole != "Admin")
+                {
+                    return Forbid("Chỉ Admin mới có thể thay đổi trạng thái tài khoản");
+                }
                 user.IsActive = request.IsActive.Value;
+            }
 
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -123,13 +181,18 @@ namespace API.Controllers
                 Id = user.Id,
                 Username = user.Username,
                 Email = user.Email,
+                Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt
             });
         }
 
+        /// <summary>
+        /// Xóa người dùng (chỉ Admin)
+        /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Policy = "AdminOnly")]
         public async Task<IActionResult> Delete(Guid id)
         {
             var user = await _context.Users.FindAsync(id);
@@ -142,12 +205,6 @@ namespace API.Controllers
             return NoContent();
         }
 
-        private static string HashPassword(string password)
-        {
-            using var sha256 = SHA256.Create();
-            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(hashedBytes);
-        }
     }
 }
 

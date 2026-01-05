@@ -2,13 +2,16 @@ using API.Contracts.Recipients;
 using API.Responses;
 using Domain.Entity;
 using Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize(Policy = "Authenticated")]
     public class RecipientsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -21,10 +24,35 @@ namespace API.Controllers
         [HttpGet]
         public async Task<ActionResult<List<RecipientResponse>>> GetAll([FromQuery] Guid? campaignId = null)
         {
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
             var query = _context.Recipients.AsQueryable();
 
             if (campaignId.HasValue)
+            {
+                // Verify campaign ownership for User/Enterprise
+                var campaign = await _context.Campaigns.FindAsync(campaignId.Value);
+                if (campaign == null)
+                    return NotFound();
+
+                if (currentUserRole != "Admin" && campaign.UserId != currentUserId)
+                    return Forbid();
+
                 query = query.Where(r => r.CampaignId == campaignId.Value);
+            }
+            else
+            {
+                // If no campaignId, filter by user's campaigns (unless Admin)
+                if (currentUserRole != "Admin")
+                {
+                    var userCampaignIds = await _context.Campaigns
+                        .Where(c => c.UserId == currentUserId)
+                        .Select(c => c.Id)
+                        .ToListAsync();
+                    query = query.Where(r => userCampaignIds.Contains(r.CampaignId));
+                }
+            }
 
             var recipients = await query
                 .Select(r => new RecipientResponse
@@ -66,9 +94,16 @@ namespace API.Controllers
         [HttpPost]
         public async Task<ActionResult<RecipientResponse>> Create([FromBody] CreateRecipientRequest request)
         {
-            // Verify campaign exists
-            if (!await _context.Campaigns.AnyAsync(c => c.Id == request.CampaignId))
-                return BadRequest("Campaign not found");
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            // Verify campaign exists and user has permission
+            var campaign = await _context.Campaigns.FindAsync(request.CampaignId);
+            if (campaign == null)
+                return BadRequest(new { error = "CAMPAIGN_NOT_FOUND", message = "Campaign not found" });
+
+            if (currentUserRole != "Admin" && campaign.UserId != currentUserId)
+                return Forbid();
 
             var recipient = new Recipient
             {
@@ -77,7 +112,7 @@ namespace API.Controllers
                 Phone = request.Phone,
                 Email = request.Email,
                 FacebookId = request.FacebookId,
-                Level = request.Level
+                Level = request.Level // Default level 1 is set in CreateRecipientRequest
             };
 
             _context.Recipients.Add(recipient);
@@ -99,9 +134,19 @@ namespace API.Controllers
         [HttpPut("{id}")]
         public async Task<ActionResult<RecipientResponse>> Update(Guid id, [FromBody] UpdateRecipientRequest request)
         {
-            var recipient = await _context.Recipients.FindAsync(id);
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            var recipient = await _context.Recipients
+                .Include(r => r.Campaign)
+                .FirstOrDefaultAsync(r => r.Id == id);
+            
             if (recipient == null)
                 return NotFound();
+
+            // Verify campaign ownership
+            if (currentUserRole != "Admin" && recipient.Campaign.UserId != currentUserId)
+                return Forbid();
 
             if (request.Name != null)
                 recipient.Name = request.Name;
@@ -136,9 +181,19 @@ namespace API.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            var recipient = await _context.Recipients.FindAsync(id);
+            var currentUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? Guid.Empty.ToString());
+            var currentUserRole = User.FindFirstValue(ClaimTypes.Role);
+
+            var recipient = await _context.Recipients
+                .Include(r => r.Campaign)
+                .FirstOrDefaultAsync(r => r.Id == id);
+            
             if (recipient == null)
                 return NotFound();
+
+            // Verify campaign ownership
+            if (currentUserRole != "Admin" && recipient.Campaign.UserId != currentUserId)
+                return Forbid();
 
             _context.Recipients.Remove(recipient);
             await _context.SaveChangesAsync();

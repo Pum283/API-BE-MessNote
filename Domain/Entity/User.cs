@@ -1,3 +1,5 @@
+using Domain.Enums;
+
 namespace Domain.Entity
 {
     /// <summary>
@@ -16,9 +18,19 @@ namespace Domain.Entity
         public string Email { get; set; } = string.Empty;
 
         /// <summary>
-        /// Mật khẩu đã được hash để bảo mật cao
+        /// Mật khẩu đã được hash để bảo mật cao (nullable cho OAuth users)
         /// </summary>
-        public string PasswordHash { get; set; } = string.Empty;
+        public string? PasswordHash { get; set; }
+
+        /// <summary>
+        /// Google ID cho OAuth authentication (nullable)
+        /// </summary>
+        public string? GoogleId { get; set; }
+
+        /// <summary>
+        /// Vai trò người dùng (User, Enterprise, Admin)
+        /// </summary>
+        public UserRole Role { get; set; } = UserRole.User;
 
         /// <summary>
         /// Trạng thái tài khoản còn hoạt động hay đã khóa
