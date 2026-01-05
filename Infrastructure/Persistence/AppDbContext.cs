@@ -19,6 +19,7 @@ namespace Infrastructure.Persistence
         public DbSet<Schedule> Schedules { get; set; }
         public DbSet<Checkin> Checkins { get; set; }
         public DbSet<History> Histories { get; set; }
+        public DbSet<PasswordResetOTP> PasswordResetOTPs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

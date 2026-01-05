@@ -1,3 +1,4 @@
+using Domain.Enums;
 using System.ComponentModel.DataAnnotations;
 
 namespace API.Contracts.Users
@@ -13,6 +14,11 @@ namespace API.Contracts.Users
 
         [StringLength(100, MinimumLength = 6)]
         public string? Password { get; set; }
+
+        /// <summary>
+        /// Vai trò người dùng (chỉ Admin mới có thể thay đổi)
+        /// </summary>
+        public UserRole? Role { get; set; }
 
         public bool? IsActive { get; set; }
     }

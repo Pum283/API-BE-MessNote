@@ -1,13 +1,30 @@
 using Infrastructure.Persistence;
 using API.Middlewares;
+using API.Services;
 using Application;
 using Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
 // Add services to the container
 builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll",
+        builder =>
+        {
+            builder
+                .AllowAnyOrigin()
+                .AllowAnyMethod()
+                .AllowAnyHeader();
+        });
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -37,6 +54,46 @@ builder.Services.AddApplication();
 // Add Infrastructure Layer
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Add JWT Authentication
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey is not configured");
+var issuer = jwtSettings["Issuer"] ?? "MessNoteAPI";
+var audience = jwtSettings["Audience"] ?? "MessNoteClient";
+
+// Google OAuth Settings (only ClientId needed for token validation)
+var googleAuthSettings = builder.Configuration.GetSection("GoogleAuthSettings");
+var googleClientId = googleAuthSettings["ClientId"] ?? throw new InvalidOperationException("Google ClientId is not configured");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = issuer,
+        ValidAudience = audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        RoleClaimType = ClaimTypes.Role
+    };
+});
+
+// Add Authorization Policies
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("EnterpriseOrAdmin", policy => policy.RequireRole("Enterprise", "Admin"));
+    options.AddPolicy("Authenticated", policy => policy.RequireAuthenticatedUser());
+});
+
+// Add JWT Service
+builder.Services.AddScoped<IJwtService, JwtService>();
+
+// Add Email Service
+builder.Services.AddScoped<IEmailService, EmailService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -46,11 +103,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// CORS must be before UseAuthorization
+app.UseCors("AllowAll");
+
 app.UseHttpsRedirection();
 
 // Exception handling middleware
 app.UseExceptionMiddleware();
 
+// Authentication & Authorization
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
