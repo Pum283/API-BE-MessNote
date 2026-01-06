@@ -32,6 +32,29 @@ namespace Infrastructure.Persistence.Configurations
                 .IsUnique()
                 .HasFilter("[GoogleId] IS NOT NULL");
 
+            builder.Property(u => u.FirstName)
+                .IsRequired(false)
+                .HasMaxLength(100);
+
+            builder.Property(u => u.LastName)
+                .IsRequired(false)
+                .HasMaxLength(100);
+
+            builder.Property(u => u.FullName)
+                .IsRequired(false)
+                .HasMaxLength(200);
+
+            builder.Property(u => u.Picture)
+                .IsRequired(false)
+                .HasMaxLength(500);
+
+            builder.Property(u => u.Locale)
+                .IsRequired(false)
+                .HasMaxLength(10);
+
+            builder.Property(u => u.EmailVerified)
+                .IsRequired(false);
+
             builder.Property(u => u.Role)
                 .IsRequired()
                 .HasConversion<int>()

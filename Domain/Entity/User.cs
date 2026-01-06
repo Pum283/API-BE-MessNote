@@ -28,6 +28,36 @@ namespace Domain.Entity
         public string? GoogleId { get; set; }
 
         /// <summary>
+        /// Tên (First Name) từ Google OAuth (nullable)
+        /// </summary>
+        public string? FirstName { get; set; }
+
+        /// <summary>
+        /// Họ (Last Name) từ Google OAuth (nullable)
+        /// </summary>
+        public string? LastName { get; set; }
+
+        /// <summary>
+        /// Tên đầy đủ từ Google OAuth (nullable)
+        /// </summary>
+        public string? FullName { get; set; }
+
+        /// <summary>
+        /// URL ảnh đại diện từ Google OAuth (nullable)
+        /// </summary>
+        public string? Picture { get; set; }
+
+        /// <summary>
+        /// Ngôn ngữ/khu vực từ Google OAuth (nullable)
+        /// </summary>
+        public string? Locale { get; set; }
+
+        /// <summary>
+        /// Email đã được xác minh từ Google (nullable)
+        /// </summary>
+        public bool? EmailVerified { get; set; }
+
+        /// <summary>
         /// Vai trò người dùng (User, Enterprise, Admin)
         /// </summary>
         public UserRole Role { get; set; } = UserRole.User;
