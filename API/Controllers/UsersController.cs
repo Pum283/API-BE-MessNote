@@ -39,7 +39,14 @@ namespace API.Controllers
                     Role = u.Role,
                     IsActive = u.IsActive,
                     CreatedAt = u.CreatedAt,
-                    UpdatedAt = u.UpdatedAt
+                    UpdatedAt = u.UpdatedAt,
+                    GoogleId = u.GoogleId,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    FullName = u.FullName,
+                    Picture = u.Picture,
+                    Locale = u.Locale,
+                    EmailVerified = u.EmailVerified
                 })
                 .ToListAsync();
 
@@ -73,7 +80,14 @@ namespace API.Controllers
                 Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
+                UpdatedAt = user.UpdatedAt,
+                GoogleId = user.GoogleId,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                FullName = user.FullName,
+                Picture = user.Picture,
+                Locale = user.Locale,
+                EmailVerified = user.EmailVerified
             });
         }
 
@@ -114,7 +128,14 @@ namespace API.Controllers
                 Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
+                UpdatedAt = user.UpdatedAt,
+                GoogleId = user.GoogleId,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                FullName = user.FullName,
+                Picture = user.Picture,
+                Locale = user.Locale,
+                EmailVerified = user.EmailVerified
             });
         }
 
@@ -184,7 +205,14 @@ namespace API.Controllers
                 Role = user.Role,
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
+                UpdatedAt = user.UpdatedAt,
+                GoogleId = user.GoogleId,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                FullName = user.FullName,
+                Picture = user.Picture,
+                Locale = user.Locale,
+                EmailVerified = user.EmailVerified
             });
         }
 

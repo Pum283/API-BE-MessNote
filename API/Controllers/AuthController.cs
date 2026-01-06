@@ -63,7 +63,14 @@ namespace API.Controllers
                 Email = user.Email,
                 Role = user.Role,
                 IsActive = user.IsActive,
-                Token = token
+                Token = token,
+                GoogleId = user.GoogleId,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                FullName = user.FullName,
+                Picture = user.Picture,
+                Locale = user.Locale,
+                EmailVerified = user.EmailVerified
             });
         }
 
@@ -98,7 +105,14 @@ namespace API.Controllers
                 Email = user.Email,
                 Role = user.Role,
                 IsActive = user.IsActive,
-                Token = token
+                Token = token,
+                GoogleId = user.GoogleId,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                FullName = user.FullName,
+                Picture = user.Picture,
+                Locale = user.Locale,
+                EmailVerified = user.EmailVerified
             });
         }
 
@@ -130,9 +144,15 @@ namespace API.Controllers
                     return Unauthorized(new { error = "Token Google không hợp lệ. Vui lòng thử lại." });
                 }
 
+                // Extract all available information from Google payload
                 var email = payload.Email;
                 var googleId = payload.Subject;
                 var name = payload.Name;
+                var givenName = payload.GivenName;
+                var familyName = payload.FamilyName;
+                var picture = payload.Picture;
+                var locale = payload.Locale;
+                var emailVerified = payload.EmailVerified;
 
                 if (string.IsNullOrEmpty(email))
                 {
@@ -144,7 +164,7 @@ namespace API.Controllers
                     return BadRequest(new { error = "Google ID bị thiếu" });
                 }
 
-                _logger.LogInformation("Google login attempt for email: {Email}, GoogleId: {GoogleId}", email, googleId);
+                _logger.LogInformation("Google login attempt for email: {Email}, GoogleId: {GoogleId}, Name: {Name}", email, googleId, name);
 
                 // Find user by GoogleId first, then by email
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId);
@@ -156,8 +176,19 @@ namespace API.Controllers
                     
                     if (user != null)
                     {
-                        // Link Google account to existing user
+                        // Link Google account to existing user and update Google info
                         user.GoogleId = googleId;
+                        user.FirstName = givenName ?? user.FirstName;
+                        user.LastName = familyName ?? user.LastName;
+                        user.FullName = name ?? user.FullName;
+                        user.Picture = picture ?? user.Picture;
+                        user.Locale = locale ?? user.Locale;
+                        // Only update EmailVerified if Google says it's verified or if user doesn't have a value yet
+                        if (emailVerified || !user.EmailVerified.HasValue)
+                        {
+                            user.EmailVerified = emailVerified;
+                        }
+                        user.UpdatedAt = DateTime.UtcNow;
                         await _context.SaveChangesAsync();
                         _logger.LogInformation("Linked Google account to existing user: {Email}", email);
                     }
@@ -179,13 +210,60 @@ namespace API.Controllers
                             Username = username,
                             Email = email,
                             GoogleId = googleId,
+                            FirstName = givenName,
+                            LastName = familyName,
+                            FullName = name,
+                            Picture = picture,
+                            Locale = locale,
+                            EmailVerified = emailVerified,
                             PasswordHash = null, // No password for OAuth users
                             IsActive = true
                         };
 
                         _context.Users.Add(user);
                         await _context.SaveChangesAsync();
-                        _logger.LogInformation("Created new user from Google account: {Email}, Username: {Username}", email, username);
+                        _logger.LogInformation("Created new user from Google account: {Email}, Username: {Username}, FullName: {FullName}", email, username, name);
+                    }
+                }
+                else
+                {
+                    // Update existing user's Google information if available
+                    bool hasChanges = false;
+                    if (!string.IsNullOrEmpty(givenName) && user.FirstName != givenName)
+                    {
+                        user.FirstName = givenName;
+                        hasChanges = true;
+                    }
+                    if (!string.IsNullOrEmpty(familyName) && user.LastName != familyName)
+                    {
+                        user.LastName = familyName;
+                        hasChanges = true;
+                    }
+                    if (!string.IsNullOrEmpty(name) && user.FullName != name)
+                    {
+                        user.FullName = name;
+                        hasChanges = true;
+                    }
+                    if (!string.IsNullOrEmpty(picture) && user.Picture != picture)
+                    {
+                        user.Picture = picture;
+                        hasChanges = true;
+                    }
+                    if (!string.IsNullOrEmpty(locale) && user.Locale != locale)
+                    {
+                        user.Locale = locale;
+                        hasChanges = true;
+                    }
+                    if (emailVerified && (!user.EmailVerified.HasValue || user.EmailVerified != emailVerified))
+                    {
+                        user.EmailVerified = emailVerified;
+                        hasChanges = true;
+                    }
+                    if (hasChanges)
+                    {
+                        user.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Updated Google information for user: {Email}", email);
                     }
                 }
 
