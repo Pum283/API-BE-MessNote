@@ -20,7 +20,7 @@ namespace API.Controllers
             if (result.Errors != null && result.Errors.Any())
                 return BadRequest(result.Errors);
             
-            return BadRequest(result.Message ?? "An error occurred");
+            return BadRequest(result.Message ?? "Đã xảy ra lỗi");
         }
 
         protected IActionResult HandleResult(OperationResult result)
@@ -33,7 +33,7 @@ namespace API.Controllers
             if (result.Errors != null && result.Errors.Any())
                 return BadRequest(result.Errors);
             
-            return BadRequest(result.Message ?? "An error occurred");
+            return BadRequest(result.Message ?? "Đã xảy ra lỗi");
         }
     }
 }
