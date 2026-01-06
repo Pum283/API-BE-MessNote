@@ -11,6 +11,15 @@ namespace API.Responses
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        
+        // Google OAuth fields
+        public string? GoogleId { get; set; }
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? FullName { get; set; }
+        public string? Picture { get; set; }
+        public string? Locale { get; set; }
+        public bool? EmailVerified { get; set; }
     }
 }
 
