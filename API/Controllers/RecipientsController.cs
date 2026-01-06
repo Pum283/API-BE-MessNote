@@ -100,7 +100,7 @@ namespace API.Controllers
             // Verify campaign exists and user has permission
             var campaign = await _context.Campaigns.FindAsync(request.CampaignId);
             if (campaign == null)
-                return BadRequest(new { error = "CAMPAIGN_NOT_FOUND", message = "Campaign not found" });
+                return BadRequest(new { error = "CAMPAIGN_NOT_FOUND", message = "Không tìm thấy chiến dịch" });
 
             if (currentUserRole != "Admin" && campaign.UserId != currentUserId)
                 return Forbid();

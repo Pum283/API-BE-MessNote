@@ -94,6 +94,9 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 // Add Email Service
 builder.Services.AddScoped<IEmailService, EmailService>();
 
+// Add Background Service for Message Scheduler
+builder.Services.AddHostedService<MessageSchedulerService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
