@@ -89,7 +89,7 @@ namespace API.Controllers
             // Verify user exists
             var user = await _context.Users.FindAsync(request.UserId);
             if (user == null)
-                return BadRequest(new { error = "USER_NOT_FOUND", message = "User not found" });
+                return BadRequest(new { error = "USER_NOT_FOUND", message = "Không tìm thấy người dùng" });
 
             // User và Enterprise chỉ có thể tạo campaigns cho chính họ, Admin có thể tạo cho bất kỳ ai
             if (currentUserRole != "Admin" && request.UserId != currentUserId)
@@ -156,7 +156,7 @@ namespace API.Controllers
             // Get user to check role
             var user = await _context.Users.FindAsync(campaign.UserId);
             if (user == null)
-                return BadRequest(new { error = "USER_NOT_FOUND", message = "User not found" });
+                return BadRequest(new { error = "USER_NOT_FOUND", message = "Không tìm thấy người dùng" });
 
             // Check campaign limits for User role when setting status to Active
             if (user.Role == UserRole.User && request.Status.HasValue && request.Status.Value == (int)CampaignStatus.Active)

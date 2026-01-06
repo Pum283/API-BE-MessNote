@@ -227,6 +227,173 @@ namespace API.Services
 </body>
 </html>";
         }
+
+        public async Task<bool> SendMessageEmailAsync(string toEmail, string recipientName, string subject, string htmlContent)
+        {
+            try
+            {
+                var mailSettings = _configuration.GetSection("MailSettings");
+                var smtpHost = mailSettings["Host"] ?? "smtp.gmail.com";
+                var smtpPort = int.Parse(mailSettings["Port"] ?? "587");
+                var smtpMail = mailSettings["Mail"];
+                var smtpPassword = mailSettings["Password"];
+                var smtpFromName = mailSettings["DisplayName"] ?? "MessNote";
+
+                if (string.IsNullOrEmpty(smtpMail) || string.IsNullOrEmpty(smtpPassword))
+                {
+                    _logger.LogError("Mail settings not configured. Host: {Host}, Mail: {Mail}", smtpHost, smtpMail ?? "NULL");
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(toEmail))
+                {
+                    _logger.LogWarning($"Cannot send email: recipient email is empty");
+                    return false;
+                }
+
+                _logger.LogInformation($"Attempting to send email to {toEmail} with subject: {subject}");
+
+                using (var client = new SmtpClient(smtpHost, smtpPort))
+                {
+                    client.EnableSsl = true;
+                    client.Credentials = new NetworkCredential(smtpMail, smtpPassword);
+                    client.Timeout = 30000; // 30 seconds timeout
+
+                    var mailMessage = new MailMessage
+                    {
+                        From = new MailAddress(smtpMail, smtpFromName),
+                        Subject = subject,
+                        Body = GenerateMessageEmailBody(recipientName, htmlContent),
+                        IsBodyHtml = true
+                    };
+
+                    mailMessage.To.Add(toEmail);
+
+                    await client.SendMailAsync(mailMessage);
+                    _logger.LogInformation($"Message email sent successfully to {toEmail} at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to send message email to {toEmail}. Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private string GenerateMessageEmailBody(string recipientName, string htmlContent)
+        {
+            // SVG Logo inline - tone trắng đen
+            var logoSvg = @"<svg viewBox='0 0 200 200' width='120' height='120' xmlns='http://www.w3.org/2000/svg' style='display: block; margin: 0 auto;'>
+                <path d='M 20 15 Q 15 12 18 20 L 18 30 Q 15 35 20 40 L 30 40 Q 35 45 40 40 L 50 40 Q 55 35 60 40 L 140 40 Q 145 35 150 40 L 160 40 Q 165 35 170 40 L 180 40 Q 185 35 182 30 L 182 20 Q 185 12 180 15 L 170 15 Q 165 10 160 15 L 40 15 Q 35 10 30 15 Z M 20 15 L 20 185 Q 15 188 18 180 L 18 170 Q 15 165 20 160 L 30 160 Q 35 155 40 160 L 160 160 Q 165 155 170 160 L 180 160 Q 185 165 182 170 L 182 180 Q 185 188 180 185 L 20 185' fill='none' stroke='#000000' stroke-width='8' stroke-linecap='round' stroke-linejoin='round'/>
+                <path d='M 40 60 Q 45 55 50 60 Q 55 58 60 60 Q 65 57 70 60 Q 75 59 80 60 Q 85 56 90 60 Q 95 58 100 60 Q 105 59 110 60 Q 115 57 120 60 Q 125 59 130 60 Q 135 58 140 60 Q 145 59 150 60 Q 155 57 160 60 L 160 140 Q 155 143 150 140 Q 145 142 140 140 Q 135 143 130 140 Q 125 141 120 140 Q 115 143 110 140 Q 105 142 100 140 Q 95 143 90 140 Q 85 141 80 140 Q 75 143 70 140 Q 65 142 60 140 Q 55 143 50 140 Q 45 141 40 140 Z' fill='#000000' opacity='0.95'/>
+                <path d='M 60 75 Q 65 80 70 75' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' fill='none' stroke-linecap='round'/>
+                <path d='M 90 85 Q 95 90 100 85' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' fill='none' stroke-linecap='round'/>
+                <path d='M 120 70 Q 125 75 130 70' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' fill='none' stroke-linecap='round'/>
+            </svg>";
+
+            return $@"<!DOCTYPE html>
+<html lang='vi'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>MessNote</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #000000;
+            background-color: #FFFFFF;
+            margin: 0;
+            padding: 0;
+        }}
+        .email-wrapper {{
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #FFFFFF;
+        }}
+        .container {{
+            padding: 20px;
+        }}
+        .header {{
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid #000000;
+            margin-bottom: 30px;
+        }}
+        .logo-container {{
+            margin-bottom: 15px;
+        }}
+        .header h1 {{
+            color: #000000;
+            margin: 10px 0 5px 0;
+            font-size: 28px;
+            font-weight: bold;
+        }}
+        .header p {{
+            color: #666666;
+            margin: 0;
+            font-size: 14px;
+        }}
+        .content {{
+            padding: 20px 0;
+        }}
+        .content h2 {{
+            color: #000000;
+            margin-top: 0;
+            font-size: 20px;
+        }}
+        .content p {{
+            color: #000000;
+            margin: 15px 0;
+            font-size: 16px;
+        }}
+        .message-content {{
+            background-color: #F5F5F5;
+            border: 1px solid #000000;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }}
+        .footer {{
+            text-align: center;
+            padding: 20px 0;
+            border-top: 2px solid #000000;
+            margin-top: 30px;
+            color: #666666;
+            font-size: 12px;
+        }}
+        .footer p {{
+            margin: 5px 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class='email-wrapper'>
+        <div class='container'>
+            <div class='header'>
+                <div class='logo-container'>
+                    {logoSvg}
+                </div>
+                <h1>MessNote</h1>
+                <p>Hệ thống gửi tin nhắn tự động</p>
+            </div>
+            <div class='content'>
+                <h2>Xin chào {(string.IsNullOrEmpty(recipientName) ? "bạn" : recipientName)},</h2>
+                <div class='message-content'>
+                    {htmlContent}
+                </div>
+            </div>
+            <div class='footer'>
+                <p><strong style='color: #000000;'>© 2024 MessNote</strong></p>
+                <p>All rights reserved.</p>
+                <p style='margin-top: 12px;'>Email này được gửi tự động, vui lòng không trả lời.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>";
+        }
     }
 }
 

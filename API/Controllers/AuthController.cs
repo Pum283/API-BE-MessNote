@@ -3,11 +3,13 @@ using API.Responses;
 using API.Services;
 using Domain.Entity;
 using Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BCrypt.Net;
 using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
+using System.Security.Claims;
 
 namespace API.Controllers
 {
@@ -35,11 +37,11 @@ namespace API.Controllers
         {
             // Check if username already exists
             if (await _context.Users.AnyAsync(u => u.Username == request.Username))
-                return BadRequest("Username already exists");
+                return BadRequest("Tên người dùng đã tồn tại");
 
             // Check if email already exists
             if (await _context.Users.AnyAsync(u => u.Email == request.Email))
-                return BadRequest("Email already exists");
+                return BadRequest("Email đã tồn tại");
 
             var user = new User
             {
@@ -73,19 +75,19 @@ namespace API.Controllers
                 .FirstOrDefaultAsync(u => u.Username == request.UsernameOrEmail || u.Email == request.UsernameOrEmail);
 
             if (user == null)
-                return Unauthorized("Invalid username/email or password");
+                return Unauthorized("Tên đăng nhập/email hoặc mật khẩu không hợp lệ");
 
             // Check if account is active
             if (!user.IsActive)
-                return Unauthorized("Account is deactivated");
+                return Unauthorized("Tài khoản đã bị vô hiệu hóa");
 
             // Check if user has password (not OAuth-only user)
             if (string.IsNullOrEmpty(user.PasswordHash))
-                return Unauthorized("This account is linked to Google. Please use Google login.");
+                return Unauthorized("Tài khoản này được liên kết với Google. Vui lòng sử dụng đăng nhập Google.");
 
             // Verify password using BCrypt
             if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-                return Unauthorized("Invalid username/email or password");
+                return Unauthorized("Tên đăng nhập/email hoặc mật khẩu không hợp lệ");
 
             var token = _jwtService.GenerateToken(user.Id, user.Username, user.Email, user.Role);
 
@@ -107,7 +109,7 @@ namespace API.Controllers
             {
                 if (string.IsNullOrEmpty(request.IdToken))
                 {
-                    return BadRequest(new { error = "IdToken is required" });
+                    return BadRequest(new { error = "IdToken là bắt buộc" });
                 }
 
                 var googleClientId = _configuration["GoogleAuthSettings:ClientId"] 
@@ -125,7 +127,7 @@ namespace API.Controllers
                 catch (InvalidJwtException ex)
                 {
                     _logger.LogError(ex, "Invalid Google JWT token");
-                    return Unauthorized(new { error = "Invalid Google token. Please try again." });
+                    return Unauthorized(new { error = "Token Google không hợp lệ. Vui lòng thử lại." });
                 }
 
                 var email = payload.Email;
@@ -134,12 +136,12 @@ namespace API.Controllers
 
                 if (string.IsNullOrEmpty(email))
                 {
-                    return BadRequest(new { error = "Email is missing from Google account" });
+                    return BadRequest(new { error = "Email bị thiếu từ tài khoản Google" });
                 }
 
                 if (string.IsNullOrEmpty(googleId))
                 {
-                    return BadRequest(new { error = "Google ID is missing" });
+                    return BadRequest(new { error = "Google ID bị thiếu" });
                 }
 
                 _logger.LogInformation("Google login attempt for email: {Email}, GoogleId: {GoogleId}", email, googleId);
@@ -190,7 +192,7 @@ namespace API.Controllers
                 // Check if account is active
                 if (!user.IsActive)
                 {
-                    return Unauthorized(new { error = "Account is deactivated" });
+                    return Unauthorized(new { error = "Tài khoản đã bị vô hiệu hóa" });
                 }
 
                 // Generate JWT token
@@ -209,7 +211,7 @@ namespace API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in Google login: {Message}", ex.Message);
-                return StatusCode(500, new { error = "An error occurred during Google login" });
+                return StatusCode(500, new { error = "Đã xảy ra lỗi trong quá trình đăng nhập Google" });
             }
         }
 
@@ -220,24 +222,23 @@ namespace API.Controllers
             {
                 if (string.IsNullOrEmpty(request.Email))
                 {
-                    return BadRequest(new { error = "Email is required" });
+                    return BadRequest(new { error = "Email là bắt buộc" });
                 }
 
                 // Find user by email
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
 
-                // Always return success to prevent email enumeration attacks
-                // But only send email if user exists
+                // Check if user exists
                 if (user == null)
                 {
                     _logger.LogWarning($"Forgot password requested for non-existent email: {request.Email}");
-                    return Ok(new { message = "If the email exists, an OTP code has been sent." });
+                    return BadRequest(new { error = "Email_Not_Found", message = "Email không tồn tại trong hệ thống" });
                 }
 
                 // Check if user has password (not OAuth-only user)
                 if (string.IsNullOrEmpty(user.PasswordHash))
                 {
-                    return BadRequest(new { error = "This account is linked to Google. Please use Google login." });
+                    return BadRequest(new { error = "Tài khoản này được liên kết với Google. Vui lòng sử dụng đăng nhập Google." });
                 }
 
                 // Generate 6-digit OTP
@@ -273,16 +274,16 @@ namespace API.Controllers
                 if (!emailSent)
                 {
                     _logger.LogError($"Failed to send OTP email to {request.Email}");
-                    return StatusCode(500, new { error = "Failed to send OTP email. Please try again later." });
+                    return StatusCode(500, new { error = "Không thể gửi email OTP. Vui lòng thử lại sau." });
                 }
 
                 _logger.LogInformation($"OTP sent successfully to {request.Email}");
-                return Ok(new { message = "If the email exists, an OTP code has been sent." });
+                return Ok(new { message = "Nếu email tồn tại, mã OTP đã được gửi." });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in forgot password: {Message}", ex.Message);
-                return StatusCode(500, new { error = "An error occurred. Please try again later." });
+                return StatusCode(500, new { error = "Đã xảy ra lỗi. Vui lòng thử lại sau." });
             }
         }
 
@@ -293,7 +294,7 @@ namespace API.Controllers
             {
                 if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.OTPCode))
                 {
-                    return BadRequest(new { error = "Email and OTP code are required" });
+                    return BadRequest(new { error = "Email và mã OTP là bắt buộc" });
                 }
 
                 // Find valid OTP
@@ -322,7 +323,7 @@ namespace API.Controllers
                     }
                     await _context.SaveChangesAsync();
 
-                    return BadRequest(new { error = "Invalid or expired OTP code" });
+                    return BadRequest(new { error = "Mã OTP không hợp lệ hoặc đã hết hạn" });
                 }
 
                 // Check attempt count
@@ -330,15 +331,15 @@ namespace API.Controllers
                 {
                     otp.IsUsed = true;
                     await _context.SaveChangesAsync();
-                    return BadRequest(new { error = "OTP code has been blocked due to too many failed attempts" });
+                    return BadRequest(new { error = "Mã OTP đã bị chặn do quá nhiều lần thử sai" });
                 }
 
-                return Ok(new { message = "OTP verified successfully", verified = true });
+                return Ok(new { message = "Xác minh OTP thành công", verified = true });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in verify OTP: {Message}", ex.Message);
-                return StatusCode(500, new { error = "An error occurred. Please try again later." });
+                return StatusCode(500, new { error = "Đã xảy ra lỗi. Vui lòng thử lại sau." });
             }
         }
 
@@ -349,12 +350,12 @@ namespace API.Controllers
             {
                 if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.OTPCode) || string.IsNullOrEmpty(request.NewPassword))
                 {
-                    return BadRequest(new { error = "Email, OTP code, and new password are required" });
+                    return BadRequest(new { error = "Email, mã OTP và mật khẩu mới là bắt buộc" });
                 }
 
                 if (request.NewPassword.Length < 6)
                 {
-                    return BadRequest(new { error = "Password must be at least 6 characters long" });
+                    return BadRequest(new { error = "Mật khẩu phải có ít nhất 6 ký tự" });
                 }
 
                 // Find valid OTP
@@ -368,20 +369,20 @@ namespace API.Controllers
 
                 if (otp == null)
                 {
-                    return BadRequest(new { error = "Invalid or expired OTP code" });
+                    return BadRequest(new { error = "Mã OTP không hợp lệ hoặc đã hết hạn" });
                 }
 
                 // Check attempt count
                 if (otp.AttemptCount >= 5)
                 {
-                    return BadRequest(new { error = "OTP code has been blocked due to too many failed attempts" });
+                    return BadRequest(new { error = "Mã OTP đã bị chặn do quá nhiều lần thử sai" });
                 }
 
                 // Find user
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
                 if (user == null)
                 {
-                    return BadRequest(new { error = "User not found" });
+                    return BadRequest(new { error = "Không tìm thấy người dùng" });
                 }
 
                 // Update password
@@ -393,12 +394,73 @@ namespace API.Controllers
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation($"Password reset successfully for user: {request.Email}");
-                return Ok(new { message = "Password has been reset successfully" });
+                return Ok(new { message = "Đặt lại mật khẩu thành công" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in reset password: {Message}", ex.Message);
-                return StatusCode(500, new { error = "An error occurred. Please try again later." });
+                return StatusCode(500, new { error = "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+            }
+        }
+
+        /// <summary>
+        /// Đổi mật khẩu (yêu cầu đăng nhập)
+        /// </summary>
+        [HttpPost("change-password")]
+        [Authorize(Policy = "Authenticated")]
+        public async Task<ActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.CurrentPassword) || string.IsNullOrEmpty(request.NewPassword))
+                {
+                    return BadRequest(new { error = "Mật khẩu hiện tại và mật khẩu mới là bắt buộc" });
+                }
+
+                if (request.NewPassword.Length < 6)
+                {
+                    return BadRequest(new { error = "Mật khẩu mới phải có ít nhất 6 ký tự" });
+                }
+
+                // Get current user ID from token
+                var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { error = "Không thể xác định người dùng" });
+                }
+
+                // Find user
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    return NotFound(new { error = "Không tìm thấy người dùng" });
+                }
+
+                // Check if account is linked to Google
+                if (!string.IsNullOrEmpty(user.GoogleId))
+                {
+                    return BadRequest(new { error = "Tài khoản này được liên kết với Google. Không thể đổi mật khẩu." });
+                }
+
+                // Verify current password
+                if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, user.PasswordHash))
+                {
+                    return Unauthorized(new { error = "Mật khẩu hiện tại không đúng" });
+                }
+
+                // Update password
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+                user.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Password changed successfully for user: {user.Email}");
+                return Ok(new { message = "Đổi mật khẩu thành công" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in change password: {Message}", ex.Message);
+                return StatusCode(500, new { error = "Đã xảy ra lỗi. Vui lòng thử lại sau." });
             }
         }
     }

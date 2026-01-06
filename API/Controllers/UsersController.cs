@@ -86,10 +86,10 @@ namespace API.Controllers
         {
             // Check if username or email already exists
             if (await _context.Users.AnyAsync(u => u.Username == request.Username))
-                return BadRequest("Username already exists");
+                return BadRequest("Tên người dùng đã tồn tại");
 
             if (await _context.Users.AnyAsync(u => u.Email == request.Email))
-                return BadRequest("Email already exists");
+                return BadRequest("Email đã tồn tại");
 
             // Chỉ Admin mới có thể tạo User với role khác User
             var role = request.Role ?? UserRole.User;
@@ -146,14 +146,14 @@ namespace API.Controllers
             if (!string.IsNullOrEmpty(request.Username) && request.Username != user.Username)
             {
                 if (await _context.Users.AnyAsync(u => u.Username == request.Username))
-                    return BadRequest("Username already exists");
+                    return BadRequest("Tên người dùng đã tồn tại");
                 user.Username = request.Username;
             }
 
             if (!string.IsNullOrEmpty(request.Email) && request.Email != user.Email)
             {
                 if (await _context.Users.AnyAsync(u => u.Email == request.Email))
-                    return BadRequest("Email already exists");
+                    return BadRequest("Email đã tồn tại");
                 user.Email = request.Email;
             }
 
